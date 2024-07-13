@@ -1,7 +1,10 @@
 
 import java.io.IOException;
 import java.sql.SQLException;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -17,6 +20,10 @@ class EventCustomerThread implements Runnable {
 	public  String startTime;
 	public int eventId;
 	public String endTime;
+	private static String url = "http://139.59.30.90:3020/data_warehouse/meter/fetchDatasnapshot";
+	final long ONE_MINUTE_IN_MILLIS = 60000;// millisecs
+	final long HOUR = 3600 * 1000; // in milli-seconds
+	final long HALFHOUR = 1800 * 1000;
 	
 	public EventCustomerThread(int customerId,int eventCustomerMapping, String startTime, int eventId, String endTime) {
 		this.customerId = customerId;
@@ -79,6 +86,9 @@ class EventCustomerThread implements Runnable {
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
+		} catch (ParseException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
 		}
 		finally {
 			if (ScheduleDAO.con != null) {
@@ -101,97 +111,177 @@ class EventCustomerThread implements Runnable {
 		}
 	}
 	
-	public void getTxData() throws ClassNotFoundException, SQLException, JSONException, IOException {
+	public void getTxData() throws ClassNotFoundException, SQLException, JSONException, IOException, ParseException {
 		ScheduleDAO scd= new ScheduleDAO();
+		JSONObject response = null;
 		if (scd.getEventCustomerStatus(customerId, eventId) != 12) {
 
 			JSONArray meterArray = new JSONArray();
 			double meterReading=0;
 			DBHelper dbhelper = new DBHelper();
 			HttpConnectorHelper httpconnectorhelper= new HttpConnectorHelper();
-			JSONObject inputDetails1= new JSONObject();
-			inputDetails1.put("meterId", 6);
-			//inputDetails1.put("timestamp", "2020-06-24 14:30:00");
-			//inputDetails1.put("timestamp", this.startTime);
-			inputDetails1.put("timestamp", this.endTime);
-			System.out.println("Time in End Tx Date"+this.endTime);
-			ArrayList<JSONObject> responseFromDevice = httpconnectorhelper
-					.sendPostWithToken(scd.getConnectionString(customerId,eventId), inputDetails1);
-			// HashMap<String,String> responseAfterParse =
-			// cm.parseInput(responseFrombcnetwork);
-			System.out.println("Response for Agent" +responseFromDevice);
-			if (responseFromDevice.size() == 1) {
-				dbhelper.updateEndTradeEventCustomer(meterReading,eventId,customerId,"e", this.endTime);
+//			JSONObject inputDetails1= new JSONObject();
+//			inputDetails1.put("meterId", 6);
+//			//inputDetails1.put("timestamp", "2020-06-24 14:30:00");
+//			//inputDetails1.put("timestamp", this.startTime);
+//			inputDetails1.put("timestamp", this.endTime);
+//			System.out.println("Time in End Tx Date"+this.endTime);
+//			ArrayList<JSONObject> responseFromDevice = httpconnectorhelper
+//					.sendPostWithToken(scd.getConnectionString(customerId,eventId), inputDetails1);
+//			// HashMap<String,String> responseAfterParse =
+//			// cm.parseInput(responseFrombcnetwork);
+//			System.out.println("Response for Agent" +responseFromDevice);
+//			if (responseFromDevice.size() == 1) {
+//				dbhelper.updateEndTradeEventCustomer(meterReading,eventId,customerId,"e", this.endTime);
+//			} else {
+//				JSONObject js1 = (JSONObject) responseFromDevice.get(0);
+//				System.out.println("js1 --- "+ js1);
+//			if(js1.isNull("meterData")) {
+//				meterReading = 0;
+//			} else {
+//				
+//				meterArray = (JSONArray)js1.get("meterData");
+//				System.out.println("meterArray --- "+ meterArray);
+//				if (meterArray.length() > 0) {
+//				JSONObject js =(JSONObject) meterArray.get(0);
+//				try {
+//					meterReading = (double)js.get("meterReading");
+//					} catch (ClassCastException e ) {
+//					meterReading = (int)js.get("meterReading");
+//					}
+//				}
+//				
+//			}
+//			System.out.println("meter Reading --- "+ meterReading);
+//				dbhelper.updateEndTradeEventCustomer(meterReading,eventId,customerId,"ne", this.startTime);
+//			}
+			int meterId = scd.getMeterId(customerId, eventId);
+			ArrayList<String> dateRanges = getStartAndEndDates();
+			JSONObject requestObject = new JSONObject();
+			requestObject.put("meterId", meterId);
+			requestObject.put("timeslot", dateRanges.get(2));
+			requestObject.put("queryDate", dateRanges.get(0));
+			response = httpconnectorhelper.sendRequestToAgent(url, requestObject, 1);
+			if (response == null || response.has("msg") || response.has("errormessage")) {
+				dbhelper.updateEventCustomer(meterReading,eventId,customerId,"e");
 			} else {
-				JSONObject js1 = (JSONObject) responseFromDevice.get(0);
-				System.out.println("js1 --- "+ js1);
-			if(js1.isNull("meterData")) {
-				meterReading = 0;
-			} else {
-				
-				meterArray = (JSONArray)js1.get("meterData");
-				System.out.println("meterArray --- "+ meterArray);
-				if (meterArray.length() > 0) {
-				JSONObject js =(JSONObject) meterArray.get(0);
-				try {
-					meterReading = (double)js.get("meterReading");
-					} catch (ClassCastException e ) {
-					meterReading = (int)js.get("meterReading");
+				JSONObject data = (JSONObject) response.get("dataSanpshot");
+				if (!data.get("Active_I_Total_kWh").equals(null)) {
+					Object meterReadingo = (Object) data.get("Active_I_Total_kWh");
+					if(meterReadingo instanceof Integer) {
+						meterReading = (int)meterReadingo;
+					} if (meterReadingo instanceof Double) {
+						meterReading = (double)meterReadingo;
 					}
+					//meterReading = (int) data.get("Active_I_Total_kWh");
+					
+				} else {
+					meterReading = 0;
 				}
-				
-			}
-			System.out.println("meter Reading --- "+ meterReading);
-				dbhelper.updateEndTradeEventCustomer(meterReading,eventId,customerId,"ne", this.startTime);
+				System.out.println("End Reading " +meterReading);
+				//dbhelper.updateEventCustomer(meterReading,eventId,customerId,"ne");
+				dbhelper.updateEndTradeEventCustomer(meterReading,eventId,customerId,"ne", this.startTime, meterId);
 			}
 		}	
 	}
 	
-	public void getStartTxData() throws ClassNotFoundException, SQLException, JSONException, IOException {
+	public void getStartTxData() throws ClassNotFoundException, SQLException, JSONException, IOException, ParseException {
 		ScheduleDAO scd= new ScheduleDAO();
+		JSONObject response = null;
 		if (scd.getEventCustomerStatus(customerId, eventId) != 12) {
 
 			JSONArray meterArray = new JSONArray();
 			double meterReading=0;
-			
+			ArrayList<String> dateRanges = getStartAndEndDates();
 			DBHelper dbhelper = new DBHelper();
 			HttpConnectorHelper httpconnectorhelper= new HttpConnectorHelper();
-			JSONObject inputDetails1= new JSONObject();
-			inputDetails1.put("meterId", 6);
-			//inputDetails1.put("timestamp", "2020-06-24 14:15:00");
-		//	inputDetails1.put("timestamp", this.endTime);
-			inputDetails1.put("timestamp", this.startTime);
-			System.out.println("Time in Start Tx Date"+this.startTime);
-			ArrayList<JSONObject> responseFromDevice = httpconnectorhelper
-					.sendPostWithToken(scd.getConnectionString(customerId, eventId), inputDetails1);
+//			JSONObject inputDetails1= new JSONObject();
+//			inputDetails1.put("meterId", 6);
+//			//inputDetails1.put("timestamp", "2020-06-24 14:15:00");
+//		//	inputDetails1.put("timestamp", this.endTime);
+//			inputDetails1.put("timestamp", this.startTime);
+//			System.out.println("Time in Start Tx Date"+this.startTime);
+//			ArrayList<JSONObject> responseFromDevice = httpconnectorhelper
+//					.sendPostWithToken(scd.getConnectionString(customerId, eventId), inputDetails1);
+			
+			JSONObject requestObject = new JSONObject();
+			requestObject.put("meterId", scd.getMeterId(customerId, eventId));
+			requestObject.put("timeslot", dateRanges.get(1));
+			requestObject.put("queryDate", dateRanges.get(0));
+			response = httpconnectorhelper.sendRequestToAgent(url, requestObject, 1);
+			if (response == null || response.has("msg") || response.has("errormessage")) {
+				dbhelper.updateEventCustomer(meterReading,eventId,customerId,"e");
+			} else {
+				JSONObject data = (JSONObject) response.get("dataSanpshot");
+				if (!data.get("Active_I_Total_kWh").equals(null)) {
+					Object meterReadingo = (Object) data.get("Active_I_Total_kWh");
+					if(meterReadingo instanceof Integer) {
+						meterReading = (int)meterReadingo;
+					} if (meterReadingo instanceof Double) {
+						meterReading = (double)meterReadingo;
+					}
+					//meterReading = (int) data.get("Active_I_Total_kWh");
+					System.out.println("Start Reading " +meterReading);	
+				} else {
+					meterReading = 0;
+				}
+				dbhelper.updateEventCustomer(meterReading,eventId,customerId,"ne");
+			}
 			// HashMap<String,String> responseAfterParse =
 			// cm.parseInput(responseFrombcnetwork);
 			
-			if (responseFromDevice.size() == 1) {
-				dbhelper.updateEventCustomer(meterReading,eventId,customerId,"e");
-			} else {
-				JSONObject js1 = (JSONObject) responseFromDevice.get(0);
-			if(js1.isNull("meterData")) {
-				meterReading = 0;
-			} else {
-				meterArray = (JSONArray)js1.get("meterData");
-				if (meterArray.length() > 0) {
-				JSONObject js =(JSONObject) meterArray.get(0);
-				try {
-					meterReading = (double)js.get("meterReading");
-					} catch (ClassCastException e ) {
-					meterReading = (int)js.get("meterReading");
-					}
-				}
-				
-			}
-				dbhelper.updateEventCustomer(meterReading,eventId,customerId,"ne");
-			
-		}	
+//			if (responseFromDevice.size() == 1) {
+//				dbhelper.updateEventCustomer(meterReading,eventId,customerId,"e");
+//			} else {
+//				JSONObject js1 = (JSONObject) responseFromDevice.get(0);
+//			if(js1.isNull("meterData")) {
+//				meterReading = 0;
+//			} else {
+//				meterArray = (JSONArray)js1.get("meterData");
+//				if (meterArray.length() > 0) {
+//				JSONObject js =(JSONObject) meterArray.get(0);
+//				try {
+//					meterReading = (double)js.get("meterReading");
+//					} catch (ClassCastException e ) {
+//					meterReading = (int)js.get("meterReading");
+//					}
+//				}
+//				
+//			}
+//				dbhelper.updateEventCustomer(meterReading,eventId,customerId,"ne");
+//			
+//		}	
 		}
 	}
 	
 
+	private ArrayList<String> getStartAndEndDates() throws ParseException {
+		
+        
+		
+		ArrayList<String> dateRanges = new ArrayList<>();
+		SimpleDateFormat dateTimeFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm");
+		SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+		// SimpleDateFormat dt1 = new SimpleDateFormat("2018-03-06");
+		SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm");
+		Date startDate = dateTimeFormat.parse(this.startTime);
+		String sR1 = timeFormat.format(startDate);
+		Date startDateR1 = new Date(startDate.getTime() - 15 * ONE_MINUTE_IN_MILLIS);
+		String sR2 = timeFormat.format(startDateR1);
+		String startDateRange = sR2 + "-" + sR1;
+
+		Date endDate = dateTimeFormat.parse(this.endTime);
+		String eR1 = timeFormat.format(endDate);
+		Date endDateR1 = new Date(endDate.getTime() - 15 * ONE_MINUTE_IN_MILLIS);
+		String eR2 = timeFormat.format(endDateR1);
+		String endDateRange = eR2 + "-" + eR1;
+		dateRanges.add(dateFormat.format(startDate));
+		dateRanges.add(startDateRange);
+		dateRanges.add(endDateRange);
+		return dateRanges;
+
+	}
+	
 	public void getStartTxDataFromKiot() throws ClassNotFoundException, SQLException, JSONException, IOException {
 		ScheduleDAO scd= new ScheduleDAO();
 		if (scd.getEventCustomerStatus(customerId, eventId) != 12) {

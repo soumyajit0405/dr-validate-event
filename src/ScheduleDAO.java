@@ -37,9 +37,9 @@ public class ScheduleDAO {
 				con = JDBCConnection.getOracleConnection();
 		 }
 		//	System.out.println("select aso.sell_order_id,ubc.private_key,ubc.public_key,abc.order_id from all_sell_orders aso,all_blockchain_orders abc, user_blockchain_keys ubc where aso.transfer_start_ts ='"+date+" "+time+"' and abc.general_order_id=aso.sell_order_id and abc.order_type='SELL_ORDER' and ubc.user_id  = aso.seller_id and aso.order_status_id=1");
-		 // String query="select aso.sell_order_id,ubc.private_key,ubc.public_key,abc.order_id,abc.all_blockchain_orders_id from all_sell_orders aso,all_blockchain_orders abc, user_blockchain_keys ubc where aso.transfer_start_ts ='"+date+" "+time+"' and abc.general_order_id=aso.sell_order_id and abc.order_type='SELL_ORDER' and ubc.user_id  = aso.seller_id and aso.order_status_id=3";
-		 String query="select a.event_id,a.event_start_time,a.event_end_time from all_events a where  a.event_status_id= 3 and a.event_end_time ='"+date+" "+time+"'";
-			//String query="select a.event_id,a.event_start_time,a.event_end_time from all_events a where  a.event_status_id= 3 and a.event_end_time ='2020-10-23 10:00:00'";
+		  //String query="select aso.sell_order_id,ubc.private_key,ubc.public_key,abc.order_id,abc.all_blockchain_orders_id from all_sell_orders aso,all_blockchain_orders abc, user_blockchain_keys ubc where aso.transfer_start_ts ='"+date+" "+time+"' and abc.general_order_id=aso.sell_order_id and abc.order_type='SELL_ORDER' and ubc.user_id  = aso.seller_id and aso.order_status_id=3";
+		 //String query="select a.event_id,a.event_start_time,a.event_end_time from all_events a where  a.event_status_id= 3 and a.event_end_time ='"+date+" "+time+"'";
+		String query="select a.event_id,a.event_start_time,a.event_end_time from all_events a where  a.event_status_id= 3 and a.event_end_time ='2022-01-29 13:30:00'";
 			pstmt=con.prepareStatement(query);
 		// pstmt.setString(1,controllerId);
 		 ResultSet rs= pstmt.executeQuery();
@@ -48,10 +48,10 @@ public class ScheduleDAO {
 		 {
 			 HashMap<String,Object> data=new HashMap<>();
 			 data.put("eventId",(rs.getInt("event_id")));
-			 data.put("startTime",(rs.getTimestamp("event_start_time")).toString());
-			 data.put("endTime",(rs.getTimestamp("event_end_time")).toString());
-			 //data.put("endTime","2020-07-29 13:15:00");
-			 //data.put("startTime","2020-07-29 13:00:00");
+			// data.put("startTime",(rs.getTimestamp("event_start_time")).toString());
+			// data.put("endTime",(rs.getTimestamp("event_end_time")).toString());
+			 data.put("startTime","2022-01-29 13:15:00");
+			 data.put("endTime","2022-01-29 13:30:00");
 			 al.add(data);
 			// initiateActions(rs.getString("user_id"),rs.getString("status"),rs.getString("controller_id"),rs.getInt("device_id"),"Timer");
 			//topic=rs.getString(1);
@@ -257,6 +257,37 @@ public class ScheduleDAO {
 			return connectionString;
 
 		}
+		
+		
+		
+		public int getMeterId(int customerId, int eventId) throws ClassNotFoundException, SQLException {
+			PreparedStatement pstmt = null;
+			int count=0;
+			ArrayList<HashMap<String,Object>> customerData = new ArrayList<>();
+			if (con == null) {
+				con = JDBCConnection.getOracleConnection();
+			}
+			int meterId = 0;
+			String query = "select dr_device_repository.meter_id from 	dr_device_repository ,all_users \n" + 
+					"where all_users.user_id = "+customerId +" and all_users.dr_contract_number=dr_device_repository.contract_number";
+			pstmt = con.prepareStatement(query);
+			// pstmt.setString(1,controllerId);
+			ResultSet rs = pstmt.executeQuery();
+			while (rs.next()) {
+				count++;
+				meterId=rs.getInt(1);
+			}
+			if (count ==0) {
+				query="update event_customer_mapping set event_customer_status_id=11 where event_id=? and customer_id=?";
+				  pstmt=ScheduleDAO.con.prepareStatement(query);
+				  pstmt.setInt(1,eventId); 
+				  pstmt.setInt(2,customerId); 
+				  pstmt.execute();
+			}
+			
+			return meterId;
+
+		}
 
 		public int getEventCustomerStatus(int customerId, int eventId) throws ClassNotFoundException, SQLException {
 			PreparedStatement pstmt = null;
@@ -323,7 +354,7 @@ public class ScheduleDAO {
 
 		}
 
-		public double getAveragePower(String startTime) throws ClassNotFoundException, SQLException, ParseException {
+		public double getAveragePower(String startTime, int meterId) throws ClassNotFoundException, SQLException, ParseException {
 			double averagePower=0;
 			try {
 			System.out.println("Get Average Power --- startTime" + startTime);
@@ -353,17 +384,17 @@ public class ScheduleDAO {
 			String query = "";
 			if (day != 1 && day !=7) {
 			query="select b.average_power from all_timeslots_power b where b.time_slot_name =  '" +timeToBeCompared+ 
-					"' and b.day= 5";
+					"' and b.day= 5 and b.meter_id = "+meterId;
 			} else {
 				query="select b.average_power from all_timeslots_power b where b.time_slot_name =  '" +timeToBeCompared+ 
-						"' and b.day= '"+Integer.toString(day)+"'";
+						"' and b.day= '"+Integer.toString(day)+"' and b.meter_id = "+meterId;
 			}
 			   pstmt=ScheduleDAO.con.prepareStatement(query);
 			//  pstmt.setInt(1,userId); 
 			  ResultSet rs = pstmt.executeQuery();
 			  while(rs.next()) {
 				  averagePower = rs.getDouble("average_power");
-			 }
+			 } 
 					}
 			catch(Exception e) {
 				e.printStackTrace();
@@ -375,6 +406,6 @@ public class ScheduleDAO {
 		
 		public static void main(String args[]) throws ClassNotFoundException, SQLException, ParseException {
 			ScheduleDAO scd = new ScheduleDAO();
-			scd.getAveragePower("2020-07-27 21:00");
+			//scd.getAveragePower("2020-07-27 21:00");
 		}
 }

@@ -11,7 +11,7 @@ public class DBHelper {
 
 	static Connection con;
 	 
-	 public void updateEndTradeEventCustomer(double meterReading, int eventId, int userId, String status, String endTime) throws SQLException, ClassNotFoundException
+	 public void updateEndTradeEventCustomer(double meterReading, int eventId, int userId, String status, String endTime, int meterId) throws SQLException, ClassNotFoundException
 		{
 		try {	
 		 //JDBCConnection connref =new JDBCConnection();
@@ -33,22 +33,23 @@ public class DBHelper {
 				  pstmt.setInt(2,userId); 
 				  ResultSet rs=pstmt.executeQuery();
 				  while(rs.next()) {
-					  meterStartReading=rs.getFloat(1);
+					  meterStartReading=rs.getDouble(1);
 				  } 
 				  System.out.println("meterStartReading--- "+meterStartReading);
 				  BigDecimal transferredPower = BigDecimal.valueOf((meterReading - meterStartReading )*4);
+				  System.out.println("transferredPower--- "+transferredPower);
 				  if (transferredPower.compareTo(zero) < 0) {
 					  transferredPower =zero;
 				  }
 				  System.out.println("transferredPower--- "+transferredPower);
 				  ScheduleDAO scd = new ScheduleDAO();
-				  BigDecimal averagePower = BigDecimal.valueOf(scd.getAveragePower(endTime));
+				  BigDecimal averagePower = BigDecimal.valueOf(scd.getAveragePower(endTime,meterId));
 				  System.out.println("averagePower ---1 " +averagePower);
 				  actualPower = averagePower.subtract(transferredPower);
 				  System.out.println("actualPower--- "+actualPower);
-				  if (actualPower.compareTo(zero) < 0) {
-					  actualPower =zero;
-				  }
+//				  if (actualPower.compareTo(zero) < 0) {
+//					  actualPower =zero;
+//				  } -- Commented for CESC
 				  System.out.println("Before update of end meter reading "+ status + "  "+meterReading);
 				if (status.equalsIgnoreCase("ne") && meterReading !=0) {
 					 query="update event_customer_mapping set customer_net_meter_reading_e=? ,actual_power=?,event_customer_status_id=15 where event_id =? and customer_id=?";
